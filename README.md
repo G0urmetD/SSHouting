@@ -1,3 +1,5 @@
+<img src="/images/sshouting.png" alt="SSHouting" width="200" height="200" /></a>
+
 # SSHouting [WORK IN PROGRESS]
 
 Automates the setup and secure configuration of SSH – with the ability to frequently update authorized keys and allowed user lists from a distribution server.
