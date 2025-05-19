@@ -4,7 +4,7 @@
 # Linux server ssh setup & update script - SSHouting
 # Description : Automates the setup of ssh & able to update the keys frequently
 # Author      : g_ourmet
-# Version     : 0.8-beta
+# Version     : 0.9-beta
 # Notes       : Modular via JSON + jq, POSIX-compliant, portable
 ###############################################################################
 
@@ -43,6 +43,26 @@ log_to_file() {
     echo "[$(date +"%Y-%m-%d %H:%M:%S")] $1" >> "$LOG_FILE"
 }
 
+#============================[ Help Function ]=================================
+show_help() {
+    print_banner
+    echo "Version: 0.9-beta"
+    echo ""
+    echo "Usage: $0 [options]"
+    echo "Options:"
+    echo "  -i,  --install            Install and configure SSH"
+    echo "  -uk, --update-keys        Update SSH keys from distribution server"
+    echo "  -U,  --Username           Username for distribution server"
+    echo "  -sk, --ssh-key            SSH private key for distribution server"
+    echo "  -p,  --port               SSH port to configure (default: 22)"
+    echo "  -au, --allow-users        Path to file with allowed SSH users"
+    echo "  -c,  --config             Use custom sshd_config file"
+    echo "  -u,  --update             Update script from GitHub"
+    echo "  -h,  --help               Show this help message"
+    echo "      --debug              Enable debug mode"
+    echo ""
+}
+
 #============================[ File Retrieval ]================================
 fetch_remote_files() {
     [ -z "$DISTRO_USER" ] || [ -z "$SSH_KEY" ] && return
@@ -58,6 +78,7 @@ fetch_remote_files() {
     scp -i "$SSH_KEY" "$DISTRO_USER":~/authorized_keys "$REMOTE_KEYS"
     NEW_KEYS_HASH=$(sha256sum "$REMOTE_KEYS" | cut -d ' ' -f1)
     [ -f "$LOCAL_KEYS" ] && OLD_KEYS_HASH=$(sha256sum "$LOCAL_KEYS" | cut -d ' ' -f1) || OLD_KEYS_HASH=""
+    log_debug "authorized_keys hash old: $OLD_KEYS_HASH | new: $NEW_KEYS_HASH"
 
     if [ "$NEW_KEYS_HASH" != "$OLD_KEYS_HASH" ]; then
         cp "$REMOTE_KEYS" "$LOCAL_KEYS"
@@ -75,6 +96,7 @@ fetch_remote_files() {
             LOCAL_USERS_HASH=$(sha256sum "$ALLOW_USERS_FILE" | cut -d ' ' -f1)
         fi
         REMOTE_USERS_HASH=$(sha256sum "$REMOTE_USERS" | cut -d ' ' -f1)
+        log_debug "users.txt hash old: $LOCAL_USERS_HASH | new: $REMOTE_USERS_HASH"
 
         if [ "$LOCAL_USERS_HASH" != "$REMOTE_USERS_HASH" ]; then
             cp "$REMOTE_USERS" "$ALLOW_USERS_FILE"
@@ -86,24 +108,15 @@ fetch_remote_files() {
     fi
 }
 
-#============================[ Help Function ]=================================
-show_help() {
-    print_banner
-    echo "Version: 0.8-beta"
-    echo ""
-    echo "Usage: $0 [options]"
-    echo "Options:"
-    echo "  -i,  --install            Install and configure SSH"
-    echo "  -uk, --update-keys        Update SSH keys from distribution server"
-    echo "  -U,  --Username          Username for distribution server"
-    echo "  -sk, --ssh-key            SSH private key for distribution server"
-    echo "  -p,  --port               SSH port to configure (default: 22)"
-    echo "  -au, --allow-users        Path to file with allowed SSH users"
-    echo "  -c,  --config             Use custom sshd_config file"
-    echo "  -u,  --update             Update script from GitHub"
-    echo "  -h,  --help               Show this help message"
-    echo "      --debug              Enable debug mode"
-    echo ""
+#============================[ Validate Users Exist ]===========================
+validate_users_exist() {
+    if [ -f "$ALLOW_USERS_FILE" ]; then
+        while read -r user; do
+            if ! id "$user" >/dev/null 2>&1; then
+                log_warn "User $user from users.txt does not exist locally."
+            fi
+        done < "$ALLOW_USERS_FILE"
+    fi
 }
 
 #============================[ SSH Install Function ]===========================
@@ -146,14 +159,23 @@ Subsystem sftp /usr/lib/openssh/sftp-server
 EOF
     fi
 
-    log_info "Restarting SSH service..."
-    systemctl restart ssh
-    log_to_file "SSH installed and configured on port ${SSH_PORT:-22} with allowed users: $USERS"
+    validate_users_exist
+
+    log_info "Testing SSH configuration..."
+    if sshd -t; then
+        log_info "SSH config test passed. Restarting service..."
+        systemctl restart ssh
+        log_to_file "SSH installed and configured on port ${SSH_PORT:-22} with allowed users: $USERS"
+    else
+        log_error "SSH config test failed. Check /etc/ssh/sshd_config."
+        exit 1
+    fi
 }
 
-#============================[ Key Update Function ]===========================
+#============================[ Update Function ]===============================
 update_keys() {
     fetch_remote_files
+    validate_users_exist
     log_info "SSH keys checked and updated if necessary."
     log_to_file "Checked for key/user updates."
 }
