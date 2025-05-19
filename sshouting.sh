@@ -182,7 +182,7 @@ update_keys() {
 
 #============================[ Self-Update Function ]==========================
 self_update() {
-    REPO_URL="https://raw.githubusercontent.com/gourmet/scripts/main/sshouting.sh"
+    REPO_URL="https://raw.githubusercontent.com/G0urmetD/SSHouting/refs/heads/main/sshouting.sh"
     DEST="$0"
 
     TMP_SCRIPT="/tmp/sshouting_latest.sh"
