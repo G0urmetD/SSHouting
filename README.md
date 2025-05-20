@@ -55,15 +55,15 @@ All operations are logged to: `/var/log/SSHouting/sshouting.log`
  ___/ /__/ / __  / /_/ / /_/ / /_/ / / / / /_/ /
 /____/____/_/ /_/\____/\__,_/\__/_/_/ /_/\__, /
                                         /____/
-Version: 1.0
+Version: 1.1
 
 Usage: ./sshouting.sh [options]
 
 Options:
   -i,   --install             Install and configure SSH
   -uk,  --update-keys         Update SSH keys from distribution server
-  -U,   --Username            Username@host for distribution server
-  -sk,  --ssh-key             Path to SSH private key for distribution server
+  -U,   --Username            Username@host for distribution server (required for SCP)
+  -sk,  --ssh-key             Path to SSH private key for distribution server (required for SCP)
   -p,   --port                SSH port to configure (default: 22)
   -pr,  --permit-root         PermitRootLogin setting [no|prohibit-password] (default: no)
   -au,  --allow-users         Path to file with allowed SSH users
@@ -77,15 +77,15 @@ Examples:
   Install SSH with default config:
     ./sshouting.sh --install
 
-  Install with keys & users from server:
+  Install and fetch authorized_keys/users from server:
     ./sshouting.sh --install --Username admin@distserver --ssh-key ~/.ssh/id_rsa --allow-users ./users.txt
 
-  Update authorized_keys and users.txt (with hash check):
+  Update keys and users from remote:
     ./sshouting.sh --update-keys --Username admin@distserver --ssh-key ~/.ssh/id_rsa
 
-  Install with custom config and PermitRootLogin:
+  Install with custom config + PermitRootLogin:
     ./sshouting.sh --install --config ./my_sshd_config --permit-root prohibit-password
 
-  Force update of keys even if hash is unchanged:
+  Force key/user update even if hash unchanged:
     ./sshouting.sh --update-keys --Username admin@distserver --ssh-key ~/.ssh/id_rsa --force
 ```
