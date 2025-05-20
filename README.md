@@ -16,6 +16,7 @@ Automates the setup and secure configuration of SSH – with the ability to freq
 - Colorized terminal output
 - Debug mode available
 - Self-updating via GitHub
+- Rollback function
 
 ---
 
