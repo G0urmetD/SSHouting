@@ -4,7 +4,7 @@
 # Linux server ssh setup & update script - SSHouting
 # Description : Automates the setup of ssh & able to update the keys frequently
 # Author      : g_ourmet
-# Version     : 1.1
+# Version     : 1.2
 # Notes       : Modular via JSON + jq, POSIX-compliant, portable
 ###############################################################################
 
@@ -46,7 +46,7 @@ log_to_file() {
 #============================[ Help Function ]=================================
 show_help() {
     print_banner
-    echo "Version: 1.1"
+    echo "Version: 1.2"
     echo ""
     echo "Usage: $0 [options]"
     echo ""
@@ -60,6 +60,7 @@ show_help() {
     echo "  -au,  --allow-users         Path to file with allowed SSH users"
     echo "  -c,   --config              Use custom sshd_config file"
     echo "  -f,   --force               Force update of keys and users regardless of hash"
+    echo "  --rollback                  Rollback to last backup of SSH config and keys"
     echo "  -u,   --update              Update this script from GitHub"
     echo "  -h,   --help                Show this help message"
     echo "        --debug               Enable debug mode"
@@ -80,6 +81,9 @@ show_help() {
     echo "  Force key/user update even if hash unchanged:"
     echo "    $0 --update-keys --Username admin@distserver --ssh-key ~/.ssh/id_rsa --force"
     echo ""
+    echo "  Rollback to previous SSH configuration:"
+    echo "    $0 --rollback"
+
 }
 
 #============================[ File Retrieval ]================================
@@ -93,6 +97,11 @@ fetch_remote_files() {
     TMP_DIR="/tmp/ssh_fetch_$$"
     mkdir -p "$TMP_DIR"
     chmod 700 "$TMP_DIR"
+
+    # rollback
+    timestamp=$(date +"%Y%m%d-%H%M%S")
+    cp /etc/ssh/sshd_config /etc/ssh/sshd_config.backup.$timestamp
+    cp ~/.ssh/authorized_keys ~/.ssh/authorized_keys.backup.$timestamp
 
     REMOTE_KEYS="$TMP_DIR/authorized_keys"
     REMOTE_USERS="$TMP_DIR/users.txt"
@@ -181,6 +190,11 @@ fi
 install_ssh() {
     fetch_remote_files
 
+    # rollback
+    timestamp=$(date +"%Y%m%d-%H%M%S")
+    cp /etc/ssh/sshd_config /etc/ssh/sshd_config.backup.$timestamp
+    cp ~/.ssh/authorized_keys ~/.ssh/authorized_keys.backup.$timestamp
+
     log_info "Installing OpenSSH server..."
     apt-get update && apt-get install -y openssh-server
 
@@ -234,6 +248,25 @@ EOF
         log_error "SSH config test failed. Check /etc/ssh/sshd_config."
         exit 1
     fi
+}
+
+#============================[ Rollback Function ]===============================
+rollback_config() {
+  latest_config=$(ls -t /etc/ssh/sshd_config.backup.* | head -n1)
+  latest_keys=$(ls -t ~/.ssh/authorized_keys.backup.* | head -n1)
+
+  if [ -f "$latest_config" ]; then
+    cp "$latest_config" /etc/ssh/sshd_config
+    log_info "Restored SSH config from $latest_config"
+  fi
+
+  if [ -f "$latest_keys" ]; then
+    cp "$latest_keys" ~/.ssh/authorized_keys
+    chmod 600 ~/.ssh/authorized_keys
+    log_info "Restored authorized_keys from $latest_keys"
+  fi
+
+  systemctl restart ssh && log_info "SSH restarted with rollback config"
 }
 
 #============================[ Update Function ]===============================
@@ -308,6 +341,9 @@ while [ "$#" -gt 0 ]; do
         -f|--force)
             FORCE_UPDATE=true
             ;;
+        --rollback)
+            ROLLBACK=true
+            ;;
         -h|--help)
             show_help
             exit 0
@@ -328,3 +364,4 @@ done
 [ "$INSTALL" = true ] && install_ssh
 [ "$UPDATE_KEYS" = true ] && update_keys
 [ "$SELF_UPDATE" = true ] && self_update
+[ "$ROLLBACK" = true ] && rollback_config
