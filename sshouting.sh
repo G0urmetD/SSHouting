@@ -4,7 +4,7 @@
 # Linux server ssh setup & update script - SSHouting
 # Description : Automates the setup of ssh & able to update the keys frequently
 # Author      : g_ourmet
-# Version     : 1.0
+# Version     : 1.1
 # Notes       : Modular via JSON + jq, POSIX-compliant, portable
 ###############################################################################
 
@@ -46,15 +46,15 @@ log_to_file() {
 #============================[ Help Function ]=================================
 show_help() {
     print_banner
-    echo "Version: 1.0"
+    echo "Version: 1.1"
     echo ""
     echo "Usage: $0 [options]"
     echo ""
     echo "Options:"
     echo "  -i,   --install             Install and configure SSH"
     echo "  -uk,  --update-keys         Update SSH keys from distribution server"
-    echo "  -U,   --Username            Username@host for distribution server"
-    echo "  -sk,  --ssh-key             Path to SSH private key for distribution server"
+    echo "  -U,   --Username            Username@host for distribution server (required for SCP)"
+    echo "  -sk,  --ssh-key             Path to SSH private key for distribution server (required for SCP)"
     echo "  -p,   --port                SSH port to configure (default: 22)"
     echo "  -pr,  --permit-root         PermitRootLogin setting [no|prohibit-password] (default: no)"
     echo "  -au,  --allow-users         Path to file with allowed SSH users"
@@ -68,23 +68,27 @@ show_help() {
     echo "  Install SSH with default config:"
     echo "    $0 --install"
     echo ""
-    echo "  Install with keys & users from server:"
+    echo "  Install and fetch authorized_keys/users from server:"
     echo "    $0 --install --Username admin@distserver --ssh-key ~/.ssh/id_rsa --allow-users ./users.txt"
     echo ""
-    echo "  Update authorized_keys and users.txt (with hash check):"
+    echo "  Update keys and users from remote:"
     echo "    $0 --update-keys --Username admin@distserver --ssh-key ~/.ssh/id_rsa"
     echo ""
-    echo "  Install with custom config and PermitRootLogin:"
+    echo "  Install with custom config + PermitRootLogin:"
     echo "    $0 --install --config ./my_sshd_config --permit-root prohibit-password"
     echo ""
-    echo "  Force update of keys even if hash is unchanged:"
+    echo "  Force key/user update even if hash unchanged:"
     echo "    $0 --update-keys --Username admin@distserver --ssh-key ~/.ssh/id_rsa --force"
     echo ""
 }
 
 #============================[ File Retrieval ]================================
 fetch_remote_files() {
-    [ -z "$DISTRO_USER" ] || [ -z "$SSH_KEY" ] && return
+    #[ -z "$DISTRO_USER" ] || [ -z "$SSH_KEY" ] && return
+    if [ -z "$DISTRO_USER" ] || [ -z "$SSH_KEY" ]; then
+        log_debug "No distribution server configured, skipping key/user retrieval."
+        return
+    fi
 
     TMP_DIR="/tmp/ssh_fetch_$$"
     mkdir -p "$TMP_DIR"
@@ -95,6 +99,10 @@ fetch_remote_files() {
     LOCAL_USER="${SUDO_USER:-$(logname)}"
     LOCAL_HOME="/home/$LOCAL_USER"
     LOCAL_KEYS="$LOCAL_HOME/.ssh/authorized_keys"
+
+    KNOWN_HOSTS="$HOME/.ssh/known_hosts"
+    ssh-keyscan -H "$(echo $DISTRO_USER | cut -d@ -f2)" >> "$KNOWN_HOSTS" 2>/dev/null || \
+    log_warn "Could not update known_hosts for $(echo $DISTRO_USER | cut -d@ -f2)"
 
     scp -i "$SSH_KEY" "$DISTRO_USER":~/authorized_keys "$REMOTE_KEYS" || {
         log_error "Failed to fetch authorized_keys from $DISTRO_USER"
@@ -132,6 +140,9 @@ fetch_remote_files() {
             log_info "users.txt is up-to-date."
         fi
     fi
+
+    # clean up temp files
+    rm -rf "$TMP_DIR"
 }
 
 #============================[ Validate Users Exist ]===========================
@@ -179,6 +190,12 @@ install_ssh() {
     if [ -n "$CUSTOM_CONFIG_FILE" ] && [ -f "$CUSTOM_CONFIG_FILE" ]; then
         log_info "Using custom sshd_config from $CUSTOM_CONFIG_FILE"
         cp "$CUSTOM_CONFIG_FILE" /etc/ssh/sshd_config
+
+        if [ -n "$ALLOW_USERS_FILE" ] && [ -f "$ALLOW_USERS_FILE" ]; then
+            USERS=$(tr '\n' ' ' < "$ALLOW_USERS_FILE")
+            echo "AllowUsers $USERS" >> /etc/ssh/sshd_config
+            log_info "Appended AllowUsers to custom sshd_config"
+        fi
     else
         ALLOW_USERS_LINE=""
         if [ -n "$ALLOW_USERS_FILE" ] && [ -f "$ALLOW_USERS_FILE" ]; then
