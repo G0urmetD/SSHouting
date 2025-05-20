@@ -4,7 +4,7 @@
 # Linux server ssh setup & update script - SSHouting
 # Description : Automates the setup of ssh & able to update the keys frequently
 # Author      : g_ourmet
-# Version     : 0.9-beta
+# Version     : 1.0
 # Notes       : Modular via JSON + jq, POSIX-compliant, portable
 ###############################################################################
 
@@ -46,20 +46,39 @@ log_to_file() {
 #============================[ Help Function ]=================================
 show_help() {
     print_banner
-    echo "Version: 0.9-beta"
+    echo "Version: 1.0"
     echo ""
     echo "Usage: $0 [options]"
+    echo ""
     echo "Options:"
-    echo "  -i,  --install            Install and configure SSH"
-    echo "  -uk, --update-keys        Update SSH keys from distribution server"
-    echo "  -U,  --Username           Username for distribution server"
-    echo "  -sk, --ssh-key            SSH private key for distribution server"
-    echo "  -p,  --port               SSH port to configure (default: 22)"
-    echo "  -au, --allow-users        Path to file with allowed SSH users"
-    echo "  -c,  --config             Use custom sshd_config file"
-    echo "  -u,  --update             Update script from GitHub"
-    echo "  -h,  --help               Show this help message"
-    echo "      --debug              Enable debug mode"
+    echo "  -i,   --install             Install and configure SSH"
+    echo "  -uk,  --update-keys         Update SSH keys from distribution server"
+    echo "  -U,   --Username            Username@host for distribution server"
+    echo "  -sk,  --ssh-key             Path to SSH private key for distribution server"
+    echo "  -p,   --port                SSH port to configure (default: 22)"
+    echo "  -pr,  --permit-root         PermitRootLogin setting [no|prohibit-password] (default: no)"
+    echo "  -au,  --allow-users         Path to file with allowed SSH users"
+    echo "  -c,   --config              Use custom sshd_config file"
+    echo "  -f,   --force               Force update of keys and users regardless of hash"
+    echo "  -u,   --update              Update this script from GitHub"
+    echo "  -h,   --help                Show this help message"
+    echo "        --debug               Enable debug mode"
+    echo ""
+    echo "Examples:"
+    echo "  Install SSH with default config:"
+    echo "    $0 --install"
+    echo ""
+    echo "  Install with keys & users from server:"
+    echo "    $0 --install --Username admin@distserver --ssh-key ~/.ssh/id_rsa --allow-users ./users.txt"
+    echo ""
+    echo "  Update authorized_keys and users.txt (with hash check):"
+    echo "    $0 --update-keys --Username admin@distserver --ssh-key ~/.ssh/id_rsa"
+    echo ""
+    echo "  Install with custom config and PermitRootLogin:"
+    echo "    $0 --install --config ./my_sshd_config --permit-root prohibit-password"
+    echo ""
+    echo "  Force update of keys even if hash is unchanged:"
+    echo "    $0 --update-keys --Username admin@distserver --ssh-key ~/.ssh/id_rsa --force"
     echo ""
 }
 
@@ -73,16 +92,23 @@ fetch_remote_files() {
 
     REMOTE_KEYS="$TMP_DIR/authorized_keys"
     REMOTE_USERS="$TMP_DIR/users.txt"
-    LOCAL_KEYS="/home/$(whoami)/.ssh/authorized_keys"
+    LOCAL_USER="${SUDO_USER:-$(logname)}"
+    LOCAL_HOME="/home/$LOCAL_USER"
+    LOCAL_KEYS="$LOCAL_HOME/.ssh/authorized_keys"
 
-    scp -i "$SSH_KEY" "$DISTRO_USER":~/authorized_keys "$REMOTE_KEYS"
+    scp -i "$SSH_KEY" "$DISTRO_USER":~/authorized_keys "$REMOTE_KEYS" || {
+        log_error "Failed to fetch authorized_keys from $DISTRO_USER"
+        return
+    }
     NEW_KEYS_HASH=$(sha256sum "$REMOTE_KEYS" | cut -d ' ' -f1)
     [ -f "$LOCAL_KEYS" ] && OLD_KEYS_HASH=$(sha256sum "$LOCAL_KEYS" | cut -d ' ' -f1) || OLD_KEYS_HASH=""
     log_debug "authorized_keys hash old: $OLD_KEYS_HASH | new: $NEW_KEYS_HASH"
 
-    if [ "$NEW_KEYS_HASH" != "$OLD_KEYS_HASH" ]; then
+    if [ "$NEW_KEYS_HASH" != "$OLD_KEYS_HASH" ] || [ "$FORCE_UPDATE" = true ]; then
+        mkdir -p "$LOCAL_HOME/.ssh"
+        chmod 700 "$LOCAL_HOME/.ssh"
         cp "$REMOTE_KEYS" "$LOCAL_KEYS"
-        chown $(whoami):$(whoami) "$LOCAL_KEYS"
+        chown "$LOCAL_USER":"$LOCAL_USER" "$LOCAL_KEYS"
         chmod 600 "$LOCAL_KEYS"
         log_info "authorized_keys updated."
         log_to_file "authorized_keys updated."
@@ -98,7 +124,7 @@ fetch_remote_files() {
         REMOTE_USERS_HASH=$(sha256sum "$REMOTE_USERS" | cut -d ' ' -f1)
         log_debug "users.txt hash old: $LOCAL_USERS_HASH | new: $REMOTE_USERS_HASH"
 
-        if [ "$LOCAL_USERS_HASH" != "$REMOTE_USERS_HASH" ]; then
+        if [ "$LOCAL_USERS_HASH" != "$REMOTE_USERS_HASH" ] || [ "$FORCE_UPDATE" = true ]; then
             cp "$REMOTE_USERS" "$ALLOW_USERS_FILE"
             log_info "users.txt updated."
             log_to_file "users.txt updated."
@@ -111,13 +137,34 @@ fetch_remote_files() {
 #============================[ Validate Users Exist ]===========================
 validate_users_exist() {
     if [ -f "$ALLOW_USERS_FILE" ]; then
+        # while read -r user; do
+        #     if ! id "$user" >/dev/null 2>&1; then
+        #         log_warn "User $user from users.txt does not exist locally."
+        #     fi
+        # done < "$ALLOW_USERS_FILE"
         while read -r user; do
+            user=$(echo "$user" | xargs)  # trim
+            [ -z "$user" ] && continue
             if ! id "$user" >/dev/null 2>&1; then
                 log_warn "User $user from users.txt does not exist locally."
             fi
         done < "$ALLOW_USERS_FILE"
     fi
 }
+
+#============================[ SSH PermitRootLogin Option ]====================
+PERMIT_ROOT="no"
+
+if [ -n "$PERMIT_ROOT_SETTING" ]; then
+    case "$PERMIT_ROOT_SETTING" in
+        no|prohibit-password)
+            PERMIT_ROOT="$PERMIT_ROOT_SETTING"
+            ;;
+        *)
+            log_warn "Invalid value for --permit-root. Falling back to 'no'."
+            ;;
+    esac
+fi
 
 #============================[ SSH Install Function ]===========================
 install_ssh() {
@@ -143,7 +190,7 @@ install_ssh() {
         cat > /etc/ssh/sshd_config <<EOF
 Port ${SSH_PORT:-22}
 Protocol 2
-PermitRootLogin no
+PermitRootLogin $PERMIT_ROOT
 PasswordAuthentication no
 PermitEmptyPasswords no
 ChallengeResponseAuthentication no
@@ -203,6 +250,8 @@ DEBUG=false
 SSH_PORT=22
 ALLOW_USERS_FILE=""
 CUSTOM_CONFIG_FILE=""
+FORCE_UPDATE=false
+PERMIT_ROOT_SETTING=""
 
 while [ "$#" -gt 0 ]; do
     case "$1" in
@@ -232,8 +281,15 @@ while [ "$#" -gt 0 ]; do
             shift
             CUSTOM_CONFIG_FILE="$1"
             ;;
+        -pr|--permit-root)
+            shift
+            PERMIT_ROOT_SETTING="$1"
+            ;;
         -u|--update)
             SELF_UPDATE=true
+            ;;
+        -f|--force)
+            FORCE_UPDATE=true
             ;;
         -h|--help)
             show_help
