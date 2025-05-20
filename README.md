@@ -19,25 +19,87 @@ Automates the setup and secure configuration of SSH – with the ability to freq
 
 ---
 
-## Usage
+## Installation Commands
 
-### Install SSH with keys and users from a distribution server
+1. Install SSH with default config
 ```bash
-./sshouting.sh --install \
-  --Username admin@<distribution-server> \
-  --ssh-key ~/.ssh/id_rsa \
-  --allow-users /etc/ssh/allowed_users.txt
+./sshouting.sh --install
 ```
 
-### Install SSH with basic secure config & update ssh-keys & user afterwards
+2. Install SSH and fetch keys/users from distribution server
 ```bash
-# basic secure installation
-./sshouting.sh --install
+# fetches `authorized_keys` and `users.txt` via scp
+# appends `AllowUsers` if users.txt is provided
 
-# update ssh-keys & userlist
+./sshouting.sh --install \
+    --Username root@distro-srv \
+    --ssh-key ~/.ssh/id_rsa \
+    --allow-users ./users.txt
+```
+
+3. Install SSH with custom configuration file
+```bash
+# Applies your own `sshd_config` file
+# If `--allow-users` is also given, `AllowUsers` is appended
+
+./sshouting.sh --install --config ./custom_sshd_config
+```
+
+4. Install SSH with specific PermitRootLogin value
+```bash
+# Sets `PermitRootLogin prohibit-password` instead of the default `no`
+
+./sshouting.sh --install --permit-root prohibit-password
+```
+
+5. Full-featured install with port, root config, key fetching
+```bash
+# Combines all features into a single install operation.
+
+./sshouting.sh --install \
+  --Username admin@distribution-server \
+  --ssh-key ~/.ssh/id_rsa \
+  --permit-root prohibit-password \
+  --port 2222 \
+  --allow-users ./users.txt
+```
+
+## Update commands
+
+1. Update authorized_keys and users.txt (hash-checked)
+```bash
+# Only updates if SHA256 hash differs.
+
 ./sshouting.sh --update-keys \
-  --Username admin@<distribution-server> \
+  --Username admin@distribution-server \
   --ssh-key ~/.ssh/id_rsa
+```
+
+2. Force key/user update regardless of hash
+```bash
+# Forces file replacement.
+
+./sshouting.sh --update-keys \
+  --Username admin@distribution-server \
+  --ssh-key ~/.ssh/id_rsa \
+  --force
+```
+
+## Other commands
+
+1. Update the script itself
+```bash
+./sshouting.sh --update
+```
+
+2. Show help
+```bash
+./sshouting.sh --help
+```
+
+3. Enable debug mode
+```bash
+./sshouting.sh --install --debug
 ```
 
 ## Files on distribution server
