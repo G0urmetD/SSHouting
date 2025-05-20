@@ -4,7 +4,7 @@
 # Linux server ssh setup & update script - SSHouting
 # Description : Automates the setup of ssh & able to update the keys frequently
 # Author      : g_ourmet
-# Version     : 1.0
+# Version     : 1.1
 # Notes       : Modular via JSON + jq, POSIX-compliant, portable
 ###############################################################################
 
@@ -46,7 +46,7 @@ log_to_file() {
 #============================[ Help Function ]=================================
 show_help() {
     print_banner
-    echo "Version: 1.0"
+    echo "Version: 1.1"
     echo ""
     echo "Usage: $0 [options]"
     echo ""
@@ -84,7 +84,11 @@ show_help() {
 
 #============================[ File Retrieval ]================================
 fetch_remote_files() {
-    [ -z "$DISTRO_USER" ] || [ -z "$SSH_KEY" ] && return
+    #[ -z "$DISTRO_USER" ] || [ -z "$SSH_KEY" ] && return
+    if [ -z "$DISTRO_USER" ] || [ -z "$SSH_KEY" ]; then
+        log_debug "No distribution server configured, skipping key/user retrieval."
+        return
+    fi
 
     TMP_DIR="/tmp/ssh_fetch_$$"
     mkdir -p "$TMP_DIR"
@@ -95,6 +99,10 @@ fetch_remote_files() {
     LOCAL_USER="${SUDO_USER:-$(logname)}"
     LOCAL_HOME="/home/$LOCAL_USER"
     LOCAL_KEYS="$LOCAL_HOME/.ssh/authorized_keys"
+
+    KNOWN_HOSTS="$HOME/.ssh/known_hosts"
+    ssh-keyscan -H "$(echo $DISTRO_USER | cut -d@ -f2)" >> "$KNOWN_HOSTS" 2>/dev/null || \
+    log_warn "Could not update known_hosts for $(echo $DISTRO_USER | cut -d@ -f2)"
 
     scp -i "$SSH_KEY" "$DISTRO_USER":~/authorized_keys "$REMOTE_KEYS" || {
         log_error "Failed to fetch authorized_keys from $DISTRO_USER"
@@ -132,6 +140,9 @@ fetch_remote_files() {
             log_info "users.txt is up-to-date."
         fi
     fi
+
+    # clean up temp files
+    rm -rf "$TMP_DIR"
 }
 
 #============================[ Validate Users Exist ]===========================
@@ -179,6 +190,12 @@ install_ssh() {
     if [ -n "$CUSTOM_CONFIG_FILE" ] && [ -f "$CUSTOM_CONFIG_FILE" ]; then
         log_info "Using custom sshd_config from $CUSTOM_CONFIG_FILE"
         cp "$CUSTOM_CONFIG_FILE" /etc/ssh/sshd_config
+
+        if [ -n "$ALLOW_USERS_FILE" ] && [ -f "$ALLOW_USERS_FILE" ]; then
+            USERS=$(tr '\n' ' ' < "$ALLOW_USERS_FILE")
+            echo "AllowUsers $USERS" >> /etc/ssh/sshd_config
+            log_info "Appended AllowUsers to custom sshd_config"
+        fi
     else
         ALLOW_USERS_LINE=""
         if [ -n "$ALLOW_USERS_FILE" ] && [ -f "$ALLOW_USERS_FILE" ]; then
