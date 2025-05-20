@@ -102,6 +102,11 @@ Automates the setup and secure configuration of SSH – with the ability to freq
 ./sshouting.sh --install --debug
 ```
 
+4. Rollback
+```bash
+./sshouting.sh --rollback
+```
+
 ## Files on distribution server
 - `authorized_keys` -> SSH public keys to be deployed
 - `users.txt` -> list of usernames allowed to SSH (one per line)
@@ -117,9 +122,9 @@ All operations are logged to: `/var/log/SSHouting/sshouting.log`
  ___/ /__/ / __  / /_/ / /_/ / /_/ / / / / /_/ /
 /____/____/_/ /_/\____/\__,_/\__/_/_/ /_/\__, /
                                         /____/
-Version: 1.1
+Version: 1.2
 
-Usage: ./sshouting.sh [options]
+Usage: ./sshouting_v2.sh [options]
 
 Options:
   -i,   --install             Install and configure SSH
@@ -131,23 +136,27 @@ Options:
   -au,  --allow-users         Path to file with allowed SSH users
   -c,   --config              Use custom sshd_config file
   -f,   --force               Force update of keys and users regardless of hash
+  --rollback                  Rollback to last backup of SSH config and keys
   -u,   --update              Update this script from GitHub
   -h,   --help                Show this help message
         --debug               Enable debug mode
 
 Examples:
   Install SSH with default config:
-    ./sshouting.sh --install
+    ./sshouting_v2.sh --install
 
   Install and fetch authorized_keys/users from server:
-    ./sshouting.sh --install --Username admin@distserver --ssh-key ~/.ssh/id_rsa --allow-users ./users.txt
+    ./sshouting_v2.sh --install --Username admin@distserver --ssh-key ~/.ssh/id_rsa --allow-users ./users.txt
 
   Update keys and users from remote:
-    ./sshouting.sh --update-keys --Username admin@distserver --ssh-key ~/.ssh/id_rsa
+    ./sshouting_v2.sh --update-keys --Username admin@distserver --ssh-key ~/.ssh/id_rsa
 
   Install with custom config + PermitRootLogin:
-    ./sshouting.sh --install --config ./my_sshd_config --permit-root prohibit-password
+    ./sshouting_v2.sh --install --config ./my_sshd_config --permit-root prohibit-password
 
   Force key/user update even if hash unchanged:
-    ./sshouting.sh --update-keys --Username admin@distserver --ssh-key ~/.ssh/id_rsa --force
+    ./sshouting_v2.sh --update-keys --Username admin@distserver --ssh-key ~/.ssh/id_rsa --force
+
+  Rollback to previous SSH configuration:
+    ./sshouting_v2.sh --rollback
 ```
